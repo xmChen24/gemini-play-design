@@ -11,14 +11,20 @@ import {
   Wand2,
   Menu,
   X as CloseIcon,
-  Download
+  Download,
+  ArrowUpRight,
+  ArrowRight,
+  ArrowUp,
+  CornerUpRight,
+  Repeat
 } from 'lucide-react';
 import Field from './components/Field';
 import { 
   Play, 
   Player, 
   PlayerRole, 
-  ViewMode 
+  ViewMode,
+  Point
 } from './types';
 import { 
   getPlays, 
@@ -27,6 +33,89 @@ import {
   createEmptyPlay 
 } from './services/storage';
 import { getCoachingInsights } from './services/geminiService';
+
+// --- Route Templates ---
+
+type RouteType = 'fly' | 'slant' | 'out' | 'in' | 'corner' | 'post' | 'hitch' | 'flat' | 'wheel';
+
+interface RouteTemplate {
+  label: string;
+  icon: React.ReactNode;
+  // Function returns relative path points based on direction (1 for right, -1 for left)
+  getPoints: (x: number, y: number, insideDir: number, outsideDir: number) => Point[];
+}
+
+const ROUTE_PRESETS: Record<RouteType, RouteTemplate> = {
+  fly: {
+    label: 'Go / Fly',
+    icon: <ArrowUp size={16} />,
+    getPoints: (x, y) => [{ x, y: Math.max(5, y - 40) }]
+  },
+  slant: {
+    label: 'Slant',
+    icon: <ArrowUpRight size={16} className="rotate-45" />,
+    getPoints: (x, y, inDir) => [
+        { x, y: y - 5 },
+        { x: x + (inDir * 15), y: y - 20 }
+    ]
+  },
+  flat: {
+    label: 'Flat',
+    icon: <ArrowRight size={16} />,
+    getPoints: (x, y, inDir, outDir) => [
+        { x, y: y - 5 },
+        { x: x + (outDir * 15), y: y - 5 }
+    ]
+  },
+  out: {
+    label: 'Out',
+    icon: <CornerUpRight size={16} />,
+    getPoints: (x, y, inDir, outDir) => [
+        { x, y: y - 15 },
+        { x: x + (outDir * 15), y: y - 15 }
+    ]
+  },
+  in: {
+    label: 'In / Dig',
+    icon: <CornerUpRight size={16} className="-scale-x-100" />,
+    getPoints: (x, y, inDir) => [
+        { x, y: y - 15 },
+        { x: x + (inDir * 15), y: y - 15 }
+    ]
+  },
+  hitch: {
+    label: 'Hitch',
+    icon: <Repeat size={16} className="rotate-90" />,
+    getPoints: (x, y) => [
+        { x, y: y - 15 },
+        { x, y: y - 12 } // Come back slightly
+    ]
+  },
+  corner: {
+    label: 'Corner',
+    icon: <ArrowUpRight size={16} />,
+    getPoints: (x, y, inDir, outDir) => [
+        { x, y: y - 15 },
+        { x: x + (outDir * 20), y: y - 40 }
+    ]
+  },
+  post: {
+    label: 'Post',
+    icon: <ArrowUpRight size={16} className="-scale-x-100" />,
+    getPoints: (x, y, inDir) => [
+        { x, y: y - 15 },
+        { x: x + (inDir * 20), y: y - 45 }
+    ]
+  },
+  wheel: {
+    label: 'Wheel',
+    icon: <ArrowUpRight size={16} />, // Simplified icon
+    getPoints: (x, y, inDir, outDir) => [
+        { x: x + (outDir * 10), y: y - 5 }, // Out to flat
+        { x: x + (outDir * 10), y: y - 35 } // Turn up field
+    ]
+  }
+};
 
 // --- Main App Component ---
 
@@ -118,6 +207,29 @@ const App: React.FC = () => {
       p.id === updatedPlayer.id ? updatedPlayer : p
     );
     setCurrentPlay({ ...currentPlay, players: updatedPlayers });
+  };
+
+  const applyRoutePreset = (template: RouteTemplate) => {
+    if (!currentPlay || !selectedPlayerId) return;
+    const player = currentPlay.players.find(p => p.id === selectedPlayerId);
+    if (!player) return;
+
+    // Determine direction based on position relative to center (x=50)
+    // If player is on left (<50), inside is +, outside is -
+    // If player is on right (>50), inside is -, outside is +
+    const isLeft = player.x < 50;
+    const inDir = isLeft ? 1 : -1;
+    const outDir = isLeft ? -1 : 1;
+
+    const newRoute = template.getPoints(player.x, player.y, inDir, outDir);
+    
+    // Clamp points to field boundaries
+    const clampedRoute = newRoute.map(p => ({
+        x: Math.max(2, Math.min(98, p.x)),
+        y: Math.max(2, Math.min(78, p.y))
+    }));
+
+    handleUpdatePlayer({ ...player, route: clampedRoute });
   };
 
   const handleAddDefender = () => {
@@ -345,6 +457,29 @@ const App: React.FC = () => {
                                 className="w-full border border-slate-200 p-2 rounded text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                              />
                         </div>
+
+                        {/* Quick Routes (Only for Offense) */}
+                        {activePlayer.role === PlayerRole.OFFENSE && (
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Quick Routes</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {Object.values(ROUTE_PRESETS).map((preset) => (
+                                        <button
+                                            key={preset.label}
+                                            onClick={() => applyRoutePreset(preset)}
+                                            className="flex flex-col items-center justify-center p-2 bg-slate-50 border border-slate-200 rounded hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 transition-colors gap-1 group"
+                                            title={preset.label}
+                                        >
+                                            <div className="text-slate-500 group-hover:text-indigo-600">
+                                                {preset.icon}
+                                            </div>
+                                            <span className="text-[10px] font-medium">{preset.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                          <div>
                              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Color</label>
                              <div className="flex gap-2 flex-wrap">
