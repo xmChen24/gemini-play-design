@@ -1,5 +1,8 @@
 import { Play, PlayerRole } from '../types';
 
+export const OFFENSE_COLORS = ['#2563eb', '#0ea5e9', '#16a34a', '#f97316', '#a855f7', '#eab308'];
+export const DEFENSE_COLORS = ['#dc2626', '#0ea5e9', '#14b8a6', '#475569', '#f97316'];
+
 const STORAGE_KEY = 'flag_football_play_lab_v1';
 
 const generateId = () => {
@@ -18,11 +21,11 @@ const EXAMPLE_PLAYS: Play[] = [
     createdAt: Date.now(),
     updatedAt: Date.now(),
     players: [
-      { id: 'p1', label: 'QB', role: PlayerRole.OFFENSE, x: 50, y: 80, color: '#2563eb', route: [] },
-      { id: 'p2', label: 'C', role: PlayerRole.OFFENSE, x: 50, y: 60, color: '#2563eb', route: [{x: 50, y: 50}, {x: 40, y: 45}] },
-      { id: 'p3', label: 'WR1', role: PlayerRole.OFFENSE, x: 85, y: 60, color: '#2563eb', route: [{x: 85, y: 10}] },
-      { id: 'p4', label: 'WR2', role: PlayerRole.OFFENSE, x: 75, y: 60, color: '#2563eb', route: [{x: 75, y: 40}, {x: 90, y: 40}] },
-      { id: 'p5', label: 'RB', role: PlayerRole.OFFENSE, x: 60, y: 80, color: '#2563eb', route: [{x: 90, y: 70}] },
+      { id: 'p1', label: 'QB', role: PlayerRole.OFFENSE, x: 50, y: 80, color: OFFENSE_COLORS[0], route: [] },
+      { id: 'p2', label: 'C', role: PlayerRole.OFFENSE, x: 50, y: 60, color: OFFENSE_COLORS[1], route: [{x: 50, y: 50}, {x: 40, y: 45}] },
+      { id: 'p3', label: 'WR1', role: PlayerRole.OFFENSE, x: 85, y: 60, color: OFFENSE_COLORS[2], route: [{x: 85, y: 10}] },
+      { id: 'p4', label: 'WR2', role: PlayerRole.OFFENSE, x: 75, y: 60, color: OFFENSE_COLORS[3], route: [{x: 75, y: 40}, {x: 90, y: 40}] },
+      { id: 'p5', label: 'RB', role: PlayerRole.OFFENSE, x: 60, y: 80, color: OFFENSE_COLORS[4], route: [{x: 90, y: 70}] },
     ]
   },
   {
@@ -34,11 +37,11 @@ const EXAMPLE_PLAYS: Play[] = [
     createdAt: Date.now(),
     updatedAt: Date.now(),
     players: [
-      { id: 'p1', label: 'QB', role: PlayerRole.OFFENSE, x: 50, y: 80, color: '#2563eb', route: [] },
-      { id: 'p2', label: 'C', role: PlayerRole.OFFENSE, x: 50, y: 60, color: '#2563eb', route: [{x: 50, y: 50}, {x: 50, y: 40}] },
-      { id: 'p3', label: 'SL', role: PlayerRole.OFFENSE, x: 35, y: 60, color: '#2563eb', route: [{x: 35, y: 55}, {x: 65, y: 55}] },
-      { id: 'p4', label: 'SR', role: PlayerRole.OFFENSE, x: 65, y: 60, color: '#2563eb', route: [{x: 65, y: 58}, {x: 35, y: 58}] },
-      { id: 'p5', label: 'WR', role: PlayerRole.OFFENSE, x: 10, y: 60, color: '#2563eb', route: [{x: 10, y: 20}] },
+      { id: 'p1', label: 'QB', role: PlayerRole.OFFENSE, x: 50, y: 80, color: OFFENSE_COLORS[0], route: [] },
+      { id: 'p2', label: 'C', role: PlayerRole.OFFENSE, x: 50, y: 60, color: OFFENSE_COLORS[1], route: [{x: 50, y: 50}, {x: 50, y: 40}] },
+      { id: 'p3', label: 'SL', role: PlayerRole.OFFENSE, x: 35, y: 60, color: OFFENSE_COLORS[2], route: [{x: 35, y: 55}, {x: 65, y: 55}] },
+      { id: 'p4', label: 'SR', role: PlayerRole.OFFENSE, x: 65, y: 60, color: OFFENSE_COLORS[3], route: [{x: 65, y: 58}, {x: 35, y: 58}] },
+      { id: 'p5', label: 'WR', role: PlayerRole.OFFENSE, x: 10, y: 60, color: OFFENSE_COLORS[4], route: [{x: 10, y: 20}] },
     ]
   }
 ];
@@ -82,11 +85,11 @@ export const createEmptyPlay = (): Play => {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     players: [
-      { id: generateId(), label: 'QB', role: PlayerRole.OFFENSE, x: 50, y: 80, color: '#2563eb', route: [] },
-      { id: generateId(), label: 'C', role: PlayerRole.OFFENSE, x: 50, y: 60, color: '#2563eb', route: [] },
-      { id: generateId(), label: 'L', role: PlayerRole.OFFENSE, x: 20, y: 60, color: '#2563eb', route: [] },
-      { id: generateId(), label: 'R', role: PlayerRole.OFFENSE, x: 80, y: 60, color: '#2563eb', route: [] },
-      { id: generateId(), label: 'RB', role: PlayerRole.OFFENSE, x: 40, y: 80, color: '#2563eb', route: [] },
+      { id: generateId(), label: 'QB', role: PlayerRole.OFFENSE, x: 50, y: 80, color: OFFENSE_COLORS[0], route: [] },
+      { id: generateId(), label: 'C', role: PlayerRole.OFFENSE, x: 50, y: 60, color: OFFENSE_COLORS[1], route: [] },
+      { id: generateId(), label: 'L', role: PlayerRole.OFFENSE, x: 20, y: 60, color: OFFENSE_COLORS[2], route: [] },
+      { id: generateId(), label: 'R', role: PlayerRole.OFFENSE, x: 80, y: 60, color: OFFENSE_COLORS[3], route: [] },
+      { id: generateId(), label: 'RB', role: PlayerRole.OFFENSE, x: 40, y: 80, color: OFFENSE_COLORS[4], route: [] },
     ]
   };
 };
