@@ -33,6 +33,7 @@ import {
   createEmptyPlay 
 } from './services/storage';
 import { getCoachingInsights } from './services/geminiService';
+import { DEFENSE_COLORS, OFFENSE_COLORS } from './services/storage';
 
 // --- Route Templates ---
 
@@ -126,6 +127,16 @@ const App: React.FC = () => {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  const getNextColor = (role: PlayerRole) => {
+    if (!currentPlay) return role === PlayerRole.DEFENSE ? DEFENSE_COLORS[0] : OFFENSE_COLORS[0];
+    const palette = role === PlayerRole.DEFENSE ? DEFENSE_COLORS : OFFENSE_COLORS;
+    const used = currentPlay.players.filter(p => p.role === role).map(p => p.color);
+    const unused = palette.find(color => !used.includes(color));
+    if (unused) return unused;
+    const index = used.length % palette.length;
+    return palette[index];
+  };
 
   // --- Initialization ---
   useEffect(() => {
@@ -241,7 +252,7 @@ const App: React.FC = () => {
       role: PlayerRole.DEFENSE,
       x: 50,
       y: 30,
-      color: '#dc2626',
+      color: getNextColor(PlayerRole.DEFENSE),
       route: []
     };
     setCurrentPlay({
@@ -299,13 +310,17 @@ const App: React.FC = () => {
             className="group bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden flex flex-col h-full"
           >
             {/* Placeholder Preview */}
-            <div className="h-32 bg-slate-100 relative flex items-center justify-center border-b border-slate-100">
+                <div className="h-32 bg-slate-100 relative flex items-center justify-center border-b border-slate-100">
                 <div className="opacity-30 font-bold text-4xl text-slate-300 select-none">
                     {play.formation.substring(0, 2).toUpperCase()}
                 </div>
                 <div className="absolute inset-0 p-4 opacity-60">
                      {play.players.slice(0,3).map((p, i) => (
-                         <div key={i} className="absolute w-2 h-2 rounded-full bg-indigo-400" style={{ left: `${p.x}%`, top: `${p.y}%`}} />
+                         <div
+                           key={i}
+                           className="absolute w-2 h-2 rounded-full"
+                           style={{ left: `${p.x}%`, top: `${p.y}%`, backgroundColor: p.color }}
+                         />
                      ))}
                 </div>
             </div>
@@ -439,9 +454,9 @@ const App: React.FC = () => {
             {activePlayer ? (
                 <div className="animate-fade-in">
                     <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                        <span 
-                            className="w-3 h-3 rounded-full block" 
-                            style={{ backgroundColor: activePlayer.color === '#dc2626' ? '#dc2626' : '#2563eb' }}
+                        <span
+                            className="w-3 h-3 rounded-full block"
+                            style={{ backgroundColor: activePlayer.color }}
                         />
                         {activePlayer.role === PlayerRole.OFFENSE ? 'Offensive Player' : 'Defender'}
                     </h3>
