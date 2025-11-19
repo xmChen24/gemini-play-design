@@ -443,7 +443,7 @@ const Field: React.FC<FieldProps> = ({
                   y="-2.5"
                   width="5"
                   height="5"
-                  fill={player.color}
+                  fill={selectedPlayerId === player.id ? '#991b1b' : '#dc2626'} // Red for defense
                   stroke="white"
                   strokeWidth="0.6"
                   rx="1"
