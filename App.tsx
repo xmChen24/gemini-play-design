@@ -431,22 +431,21 @@ const App: React.FC = () => {
         </div>
 
         {/* Center - Field */}
-        <div className="flex-1 bg-slate-100 p-2 sm:p-4 lg:p-8 relative overflow-hidden flex items-center justify-center">
-             {/* Aspect ratio of 100/80 = 1.25 */}
-             <div className="w-full max-w-4xl aspect-[1.25] shadow-xl rounded-lg border-4 border-white bg-white relative">
-                <Field 
-                    play={currentPlay} 
-                    selectedPlayerId={selectedPlayerId}
-                    onSelectPlayer={setSelectedPlayerId}
-                    onUpdatePlayer={handleUpdatePlayer}
-                />
-                
-                {/* Instructions Overlay */}
-                <div className="absolute top-4 left-4 right-4 sm:right-auto bg-white/90 backdrop-blur-sm px-3 py-2 rounded text-xs text-slate-500 pointer-events-none shadow-sm border border-slate-100 z-10">
-                    <p className="hidden sm:block">Drag players to move • Click to select • Click field to add route</p>
-                    <p className="sm:hidden">Tap player to select • Drag to move • Tap field for route</p>
-                </div>
-             </div>
+        <div className="flex-1 bg-slate-100 relative overflow-hidden">
+          <div className="absolute inset-0">
+            <Field 
+              play={currentPlay} 
+              selectedPlayerId={selectedPlayerId}
+              onSelectPlayer={setSelectedPlayerId}
+              onUpdatePlayer={handleUpdatePlayer}
+            />
+          </div>
+
+          {/* Instructions Overlay */}
+          <div className="absolute top-4 left-4 right-4 sm:right-auto bg-white/80 backdrop-blur-sm px-3 py-2 rounded text-xs text-slate-600 pointer-events-none shadow-sm border border-slate-100 z-10">
+            <p className="hidden sm:block">Drag players to move • Click to select • Click field to add route</p>
+            <p className="sm:hidden">Tap player to select • Drag to move • Tap field for route</p>
+          </div>
         </div>
 
         {/* Right Sidebar - Contextual */}

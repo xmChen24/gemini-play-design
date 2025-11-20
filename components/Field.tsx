@@ -14,13 +14,48 @@ interface FieldProps {
 const FIELD_WIDTH = 100;
 const FIELD_HEIGHT = 80;
 
-type InteractionType = 'player' | 'pan' | null;
+type InteractionType = 'player' | 'route' | 'field' | null;
 
-interface ViewportState {
-  x: number;
-  y: number;
-  zoom: number;
-}
+const PLAYER_COLORS: Record<string, string> = {
+  Q: '#c62828',
+  C: '#1f232c',
+  X: '#1e6fd8',
+  Y: '#1f9c5a',
+  Z: '#f97316'
+};
+
+const LABEL_ALIASES: Record<string, string> = {
+  QB: 'Q',
+  Q: 'Q',
+  CENTER: 'C',
+  C: 'C',
+  WR: 'X',
+  WR1: 'X',
+  L: 'X',
+  SL: 'Y',
+  SLOT: 'Y',
+  WR3: 'Y',
+  RB: 'Y',
+  Y: 'Y',
+  WR2: 'Z',
+  R: 'Z',
+  SR: 'Z',
+  Z: 'Z'
+};
+
+const getDisplayLabel = (player: Player) => {
+  if (player.role === PlayerRole.DEFENSE) {
+    return player.label.substring(0, 1).toUpperCase();
+  }
+  const candidate = LABEL_ALIASES[player.label.toUpperCase()] || player.label.substring(0, 1).toUpperCase();
+  return ['Q', 'C', 'X', 'Y', 'Z'].includes(candidate) ? candidate : candidate.substring(0, 1);
+};
+
+const getPlayerColor = (player: Player) => {
+  if (player.role === PlayerRole.DEFENSE) return player.color;
+  const label = getDisplayLabel(player);
+  return PLAYER_COLORS[label] || player.color;
+};
 
 const Field: React.FC<FieldProps> = ({
   play,
@@ -33,39 +68,17 @@ const Field: React.FC<FieldProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragTrail, setDragTrail] = useState<Point[]>([]);
-  const [viewport, setViewport] = useState<ViewportState>({ x: 0, y: 0, zoom: 1 });
   const interactionRef = useRef<{
     pointerId: number | null;
     type: InteractionType;
     playerId?: string;
+    routeIndex?: number;
     startPoint: Point | null;
-    startViewport: ViewportState;
     moved: boolean;
-  }>({ pointerId: null, type: null, startPoint: null, startViewport: { x: 0, y: 0, zoom: 1 }, moved: false });
+  }>({ pointerId: null, type: null, startPoint: null, moved: false });
   const pendingFrameRef = useRef<number | null>(null);
   const latestPointRef = useRef<Point | null>(null);
-
-  const clampViewport = (candidate: ViewportState) => {
-    const width = FIELD_WIDTH / candidate.zoom;
-    const height = FIELD_HEIGHT / candidate.zoom;
-    const minX = -FIELD_WIDTH * 0.25;
-    const maxX = FIELD_WIDTH - width + FIELD_WIDTH * 0.25;
-    const minY = -FIELD_HEIGHT * 0.25;
-    const maxY = FIELD_HEIGHT - height + FIELD_HEIGHT * 0.25;
-
-    return {
-      ...candidate,
-      x: Math.min(Math.max(candidate.x, minX), maxX),
-      y: Math.min(Math.max(candidate.y, minY), maxY)
-    };
-  };
-
-  const setViewportClamped = (updater: (prev: ViewportState) => ViewportState) => {
-    setViewport(prev => clampViewport(updater(prev)));
-  };
-
-  const viewBoxWidth = FIELD_WIDTH / viewport.zoom;
-  const viewBoxHeight = FIELD_HEIGHT / viewport.zoom;
+  const pendingRouteFrame = useRef<number | null>(null);
 
   // Convert screen coordinates to SVG coordinates
   const getSvgPoint = (clientX: number, clientY: number) => {
@@ -98,7 +111,11 @@ const Field: React.FC<FieldProps> = ({
     }
   };
 
-  const handlePointerDown = (e: React.PointerEvent, player?: Player) => {
+  const handlePointerDown = (
+    e: React.PointerEvent,
+    player?: Player,
+    routeHandle?: { playerId: string; pointIndex: number }
+  ) => {
     if (readOnly) return;
     e.stopPropagation();
     const point = getSvgPoint(e.clientX, e.clientY);
@@ -111,7 +128,18 @@ const Field: React.FC<FieldProps> = ({
         type: 'player',
         playerId: player.id,
         startPoint: point,
-        startViewport: viewport,
+        moved: false
+      };
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+    } else if (routeHandle) {
+      interactionRef.current = {
+        pointerId: e.pointerId,
+        type: 'route',
+        playerId: routeHandle.playerId,
+        routeIndex: routeHandle.pointIndex,
+        startPoint: point,
         moved: false
       };
       if (e.currentTarget.setPointerCapture) {
@@ -120,9 +148,8 @@ const Field: React.FC<FieldProps> = ({
     } else {
       interactionRef.current = {
         pointerId: e.pointerId,
-        type: 'pan',
+        type: 'field',
         startPoint: point,
-        startViewport: viewport,
         moved: false
       };
       if (e.currentTarget.setPointerCapture) {
@@ -145,16 +172,21 @@ const Field: React.FC<FieldProps> = ({
       schedulePlayerUpdate(interaction.playerId, { x, y });
     }
 
-    if (interaction.type === 'pan' && interaction.startPoint) {
-      const deltaX = point.x - interaction.startPoint.x;
-      const deltaY = point.y - interaction.startPoint.y;
-
-      setViewportClamped(() => ({
-        ...interaction.startViewport,
-        x: interaction.startViewport.x - deltaX,
-        y: interaction.startViewport.y - deltaY,
-        zoom: interaction.startViewport.zoom
-      }));
+    if (interaction.type === 'route' && interaction.playerId != null && interaction.routeIndex !== undefined) {
+      const clamped = {
+        x: Math.max(2, Math.min(FIELD_WIDTH - 2, point.x)),
+        y: Math.max(2, Math.min(FIELD_HEIGHT - 2, point.y))
+      };
+      if (pendingRouteFrame.current === null) {
+        const { playerId, routeIndex } = interaction;
+        pendingRouteFrame.current = requestAnimationFrame(() => {
+          pendingRouteFrame.current = null;
+          const player = play.players.find(p => p.id === playerId);
+          if (!player) return;
+          const updatedRoute = player.route.map((pt, idx) => idx === routeIndex ? clamped : pt);
+          onUpdatePlayer({ ...player, route: updatedRoute });
+        });
+      }
     }
   };
 
@@ -167,7 +199,7 @@ const Field: React.FC<FieldProps> = ({
       setDragTrail([]);
     }
 
-    if (interaction.type === 'pan' && !interaction.moved && selectedPlayerId) {
+    if (interaction.type === 'field' && !interaction.moved && selectedPlayerId) {
       const point = getSvgPoint(e.clientX, e.clientY);
       const currentPlayer = play.players.find(p => p.id === selectedPlayerId);
 
@@ -189,42 +221,7 @@ const Field: React.FC<FieldProps> = ({
       }
     }
 
-    interactionRef.current = {
-      pointerId: null,
-      type: null,
-      startPoint: null,
-      startViewport: viewport,
-      moved: false
-    };
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (readOnly) return;
-    e.preventDefault();
-    const direction = e.deltaY < 0 ? 1 : -1;
-    const zoomDelta = direction > 0 ? 1.08 : 0.92;
-    const focusPoint = getSvgPoint(e.clientX, e.clientY);
-
-    setViewportClamped(prev => {
-      const newZoom = Math.min(2.5, Math.max(0.6, prev.zoom * zoomDelta));
-
-      const prevWidth = FIELD_WIDTH / prev.zoom;
-      const prevHeight = FIELD_HEIGHT / prev.zoom;
-      const newWidth = FIELD_WIDTH / newZoom;
-      const newHeight = FIELD_HEIGHT / newZoom;
-
-      const scaleX = (focusPoint.x - prev.x) / prevWidth;
-      const scaleY = (focusPoint.y - prev.y) / prevHeight;
-
-      const newX = focusPoint.x - scaleX * newWidth;
-      const newY = focusPoint.y - scaleY * newHeight;
-
-      return {
-        x: newX,
-        y: newY,
-        zoom: newZoom
-      };
-    });
+    interactionRef.current = { pointerId: null, type: null, startPoint: null, moved: false };
   };
 
   useEffect(() => {
@@ -232,167 +229,147 @@ const Field: React.FC<FieldProps> = ({
       if (pendingFrameRef.current !== null) {
         cancelAnimationFrame(pendingFrameRef.current);
       }
+      if (pendingRouteFrame.current !== null) {
+        cancelAnimationFrame(pendingRouteFrame.current);
+      }
     };
   }, []);
 
   return (
-    <div className="w-full h-full bg-white rounded-lg shadow-inner overflow-hidden select-none touch-none relative">
+    <div className="w-full h-full overflow-hidden select-none touch-none relative">
       <svg
         id="play-field-svg"
         ref={svgRef}
         xmlns="http://www.w3.org/2000/svg"
-        viewBox={`${viewport.x} ${viewport.y} ${viewBoxWidth} ${viewBoxHeight}`}
+        viewBox={`0 0 ${FIELD_WIDTH} ${FIELD_HEIGHT}`}
         className="w-full h-full cursor-crosshair"
         onPointerDown={(e) => handlePointerDown(e)}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
-        onWheel={handleWheel}
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
           <marker
-            id="arrowhead"
+            id="route-arrow"
             markerWidth="6"
-            markerHeight="4"
-            refX="5"
-            refY="2"
+            markerHeight="6"
+            refX="4.8"
+            refY="3"
             orient="auto"
+            markerUnits="strokeWidth"
           >
-            <polygon points="0 0, 6 2, 0 4" fill="#4b5563" />
+            <path d="M0,0 L6,3 L0,6 Z" fill="context-stroke" />
           </marker>
 
-          <linearGradient id="turf" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#0b5aa2" />
-            <stop offset="100%" stopColor="#0b4b88" />
+          <linearGradient id="field-base" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="100%" stopColor="#f3f4f7" />
           </linearGradient>
 
-          <pattern id="turfTexture" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
-            <rect x="0" y="0" width="2" height="2" fill="#0b4f95" opacity="0.18" />
-            <rect x="2" y="2" width="2" height="2" fill="#0d66b7" opacity="0.18" />
-          </pattern>
+          <filter id="player-shadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="0.6" stdDeviation="0.65" floodColor="#0f172a" floodOpacity="0.35" />
+          </filter>
         </defs>
 
-        {/* Field Base */}
-        <rect x={0} y={0} width={FIELD_WIDTH} height={FIELD_HEIGHT} fill="url(#turf)" />
-        <rect x={0} y={0} width={FIELD_WIDTH} height={FIELD_HEIGHT} fill="url(#turfTexture)" />
+        {/* Clean playing surface */}
+        <rect x={0} y={0} width={FIELD_WIDTH} height={FIELD_HEIGHT} fill="url(#field-base)" />
 
-        {/* End Zones */}
-        <rect x={0} y={0} width={8} height={FIELD_HEIGHT} fill="#e21f26" opacity={0.92} />
-        <rect x={FIELD_WIDTH - 8} y={0} width={8} height={FIELD_HEIGHT} fill="#0b1f41" opacity={0.95} />
-        <text
-          x={4}
-          y={FIELD_HEIGHT / 2}
-          textAnchor="middle"
-          fill="white"
-          fontWeight="700"
-          fontSize="8"
-          letterSpacing="0.5"
-          transform={`rotate(-90 4 ${FIELD_HEIGHT / 2})`}
-          opacity={0.9}
-        >
-          NFL FLAG
-        </text>
-        <text
-          x={FIELD_WIDTH - 4}
-          y={FIELD_HEIGHT / 2}
-          textAnchor="middle"
-          fill="white"
-          fontWeight="700"
-          fontSize="8"
-          letterSpacing="0.5"
-          transform={`rotate(90 ${FIELD_WIDTH - 4} ${FIELD_HEIGHT / 2})`}
-          opacity={0.9}
-        >
-          NFL FLAG
-        </text>
+        {/* Upper / lower stripes */}
+        <line x1={0} y1={5} x2={FIELD_WIDTH} y2={5} stroke="#5c6474" strokeWidth={1.6} strokeLinecap="round" />
+        <line
+          x1={0}
+          y1={FIELD_HEIGHT - 5}
+          x2={FIELD_WIDTH}
+          y2={FIELD_HEIGHT - 5}
+          stroke="#5c6474"
+          strokeWidth={1.6}
+          strokeLinecap="round"
+        />
 
-        {/* Yard Lines + Numbers */}
-        <g stroke="white" strokeWidth={0.6} opacity={0.95}>
-          {Array.from({ length: Math.floor((FIELD_WIDTH - 16) / 5) + 1 }).map((_, i) => {
-            const x = 8 + i * 5;
-            return (
-              <line key={`yl-${i}`} x1={x} y1={0} x2={x} y2={FIELD_HEIGHT} strokeDasharray={i % 2 === 0 ? undefined : '1 2'} />
-            );
+        {/* Center blue stripe */}
+        <line
+          x1={0}
+          y1={FIELD_HEIGHT / 2}
+          x2={FIELD_WIDTH}
+          y2={FIELD_HEIGHT / 2}
+          stroke="#2f7beb"
+          strokeWidth={2.6}
+        />
+
+        {/* Section separators */}
+        <g stroke="#c9cfd8" strokeWidth={0.7}>
+          {[1, 2].map(i => {
+            const y = 5 + i * ((FIELD_HEIGHT - 10) / 3);
+            return <line key={`section-${i}`} x1={0} y1={y} x2={FIELD_WIDTH} y2={y} />;
           })}
         </g>
 
-        <g fill="#cfe7ff" fontSize="3" fontWeight="700" opacity={0.95}>
-          {Array.from({ length: 6 }).map((_, i) => {
-            const value = (i + 1) * 5;
-            const x = 8 + value;
-            return (
-              <React.Fragment key={`num-${value}`}>
-                <text x={x} y={8} textAnchor="middle">{value}</text>
-                <text x={x} y={FIELD_HEIGHT - 4} textAnchor="middle" transform={`scale(1 -1) translate(0 ${-FIELD_HEIGHT})`}>
-                  {value}
-                </text>
-              </React.Fragment>
-            );
-          })}
-        </g>
-
-        {/* Hash Marks */}
-        <g stroke="white" strokeWidth={0.8} opacity={0.9}>
-          {Array.from({ length: Math.floor((FIELD_WIDTH - 16) / 5) + 1 }).map((_, i) => {
-            const x = 8 + i * 5;
+        {/* Yard markers */}
+        <g stroke="#8d939f" strokeWidth={1.3} strokeLinecap="round">
+          {Array.from({ length: 9 }).map((_, i) => {
+            const y = 8 + i * ((FIELD_HEIGHT - 16) / 8);
             return (
               <React.Fragment key={`hash-${i}`}>
-                <line x1={x - 1.3} y1={FIELD_HEIGHT / 2 - 10} x2={x - 1.3} y2={FIELD_HEIGHT / 2 - 8} />
-                <line x1={x - 1.3} y1={FIELD_HEIGHT / 2 + 8} x2={x - 1.3} y2={FIELD_HEIGHT / 2 + 10} />
-                <line x1={x + 1.3} y1={FIELD_HEIGHT / 2 - 10} x2={x + 1.3} y2={FIELD_HEIGHT / 2 - 8} />
-                <line x1={x + 1.3} y1={FIELD_HEIGHT / 2 + 8} x2={x + 1.3} y2={FIELD_HEIGHT / 2 + 10} />
+                <line x1={3} y1={y} x2={10} y2={y} />
+                <line x1={FIELD_WIDTH - 10} y1={y} x2={FIELD_WIDTH - 3} y2={y} />
               </React.Fragment>
             );
           })}
         </g>
 
-        {/* Midfield Logo Placeholder */}
-        <g transform={`translate(${FIELD_WIDTH / 2}, ${FIELD_HEIGHT / 2})`}>
-          <circle r={6} fill="#0c2b52" opacity={0.75} />
-          <circle r={5.2} fill="none" stroke="#d3e5ff" strokeWidth={0.7} strokeDasharray="1.2 1.2" />
-          <text textAnchor="middle" fill="#f8fafc" fontSize="3.2" fontWeight="700" letterSpacing="0.5">FLAG</text>
-        </g>
-
-        {/* Optional Grid */}
+        {/* Optional subtle grid */}
         {showGrid && (
-          <g className="opacity-25" stroke="#e2e8f0" strokeWidth={0.25}>
-            {Array.from({ length: Math.ceil(FIELD_WIDTH / 10) + 1 }).map((_, i) => (
-              <line key={`v-${i}`} x1={i * 10} y1={0} x2={i * 10} y2={FIELD_HEIGHT} />
-            ))}
-            {Array.from({ length: Math.ceil(FIELD_HEIGHT / 10) + 1 }).map((_, i) => (
-              <line key={`h-${i}`} x1={0} y1={i * 10} x2={FIELD_WIDTH} y2={i * 10} />
-            ))}
+          <g stroke="#e2e5ee" strokeWidth={0.45} opacity={0.45}>
+            {Array.from({ length: 5 }).map((_, i) => {
+              const x = i * (FIELD_WIDTH / 4);
+              return <line key={`grid-v-${i}`} x1={x} y1={6} x2={x} y2={FIELD_HEIGHT - 6} />;
+            })}
+            {Array.from({ length: 4 }).map((_, i) => {
+              const y = 6 + i * ((FIELD_HEIGHT - 12) / 3);
+              return <line key={`grid-h-${i}`} x1={0} y1={y} x2={FIELD_WIDTH} y2={y} />;
+            })}
           </g>
         )}
-
-        {/* LOS / Midfield indicators - Center line */}
-        <line x1={8} y1={FIELD_HEIGHT / 2} x2={FIELD_WIDTH - 8} y2={FIELD_HEIGHT / 2} stroke="#cfe7ff" strokeWidth="0.7" strokeDasharray="2 3" opacity={0.7} />
-
-        {/* Legend Badge */}
-        <g transform={`translate(${FIELD_WIDTH - 18}, 10)`}>
-          <rect x={-10} y={-6} width={20} height={12} rx={2} fill="#0f172a" opacity={0.7} />
-          <text x={0} y={0.8} textAnchor="middle" fill="white" fontSize="3" fontWeight="700">PLAY LAB</text>
-          <text x={0} y={4} textAnchor="middle" fill="#cfe7ff" fontSize="2">NFL FLAG STYLE</text>
-        </g>
 
         {/* Routes */}
         {play.players.map(player => {
           if (player.route.length === 0) return null;
           const points = [`${player.x},${player.y}`, ...player.route.map(p => `${p.x},${p.y}`)].join(' ');
+          const color = getPlayerColor(player);
           return (
             <polyline
               key={`route-${player.id}`}
               points={points}
               fill="none"
-              stroke={player.color}
-              strokeWidth="0.8"
-              markerEnd="url(#arrowhead)"
+              stroke={color}
+              strokeWidth={1.35}
+              markerEnd="url(#route-arrow)"
               className="pointer-events-none transition-all duration-300"
               strokeLinecap="round"
               strokeLinejoin="round"
+              opacity={0.9}
             />
           );
+        })}
+
+        {/* Route handles */}
+        {play.players.map(player => {
+          if (player.route.length === 0 || selectedPlayerId !== player.id) return null;
+          const color = getPlayerColor(player);
+          return player.route.map((point, index) => (
+            <circle
+              key={`handle-${player.id}-${index}`}
+              cx={point.x}
+              cy={point.y}
+              r={0.8}
+              fill="#f8fafc"
+              stroke={color}
+              strokeWidth={0.4}
+              className="cursor-pointer"
+              onPointerDown={(e) => handlePointerDown(e, undefined, { playerId: player.id, pointIndex: index })}
+            />
+          ));
         })}
 
         {/* Drag Trail */}
@@ -400,8 +377,8 @@ const Field: React.FC<FieldProps> = ({
           <polyline
             points={dragTrail.map(p => `${p.x},${p.y}`).join(' ')}
             fill="none"
-            stroke="#93c5fd"
-            strokeWidth={0.7}
+            stroke="#a5b4fc"
+            strokeWidth={0.48}
             strokeLinecap="round"
             strokeLinejoin="round"
             opacity={0.5}
@@ -409,85 +386,45 @@ const Field: React.FC<FieldProps> = ({
         )}
 
         {/* Players */}
-        {play.players.map(player => (
-          <g
-            key={player.id}
-            transform={`translate(${player.x}, ${player.y})`}
-            className={`cursor-pointer transition-transform duration-100 ${isDragging && selectedPlayerId === player.id ? 'scale-110' : ''}`}
-            onPointerDown={(e) => handlePointerDown(e, player)}
-          >
-            {player.role === PlayerRole.OFFENSE ? (
-              <>
-                <circle
-                  r="3"
-                  fill={selectedPlayerId === player.id ? '#0ea5e9' : player.color}
-                  stroke="white"
-                  strokeWidth="0.6"
-                  className="shadow-sm"
-                />
-                <text
-                  y="0.8"
-                  textAnchor="middle"
-                  fill="white"
-                  fontSize="2"
-                  fontWeight="bold"
-                  className="pointer-events-none font-sans"
-                >
-                  {player.label.substring(0, 2)}
-                </text>
-              </>
-            ) : (
-              <>
-                <rect
-                  x="-2.5"
-                  y="-2.5"
-                  width="5"
-                  height="5"
-                  fill={selectedPlayerId === player.id ? '#991b1b' : '#dc2626'} // Red for defense
-                  stroke="white"
-                  strokeWidth="0.6"
-                  rx="1"
-                />
-                <text
-                  y="0.8"
-                  textAnchor="middle"
-                  fill="white"
-                  fontSize="2"
-                  fontWeight="bold"
-                  className="pointer-events-none font-sans"
-                >
-                  {player.label.substring(0, 1)}
-                </text>
-              </>
-            )}
-            {/* Highlight Ring */}
-            {selectedPlayerId === player.id && !readOnly && (
-              <circle r="4.7" fill="none" stroke="#22d3ee" strokeWidth="0.35" strokeDasharray="1 0.7" className="animate-pulse" />
-            )}
-          </g>
-        ))}
+        {play.players.map(player => {
+          const isSelected = selectedPlayerId === player.id;
+          const isOffense = player.role === PlayerRole.OFFENSE;
+          const label = isOffense ? getDisplayLabel(player) : player.label.substring(0, 1).toUpperCase();
+          const iconColor = isOffense ? getPlayerColor(player) : '#3f4759';
+
+          return (
+            <g
+              key={player.id}
+              transform={`translate(${player.x}, ${player.y})`}
+              className={`cursor-pointer transition-transform duration-150 ${isDragging && isSelected ? 'scale-110' : ''}`}
+              onPointerDown={(e) => handlePointerDown(e, player)}
+            >
+              <circle
+                r="2.6"
+                fill={iconColor}
+                stroke={isSelected ? '#ffffff' : '#e3e9f4'}
+                strokeWidth="0.6"
+                filter="url(#player-shadow)"
+              />
+              <text
+                y="0.8"
+                textAnchor="middle"
+                fill="#ffffff"
+                fontSize="1.7"
+                fontWeight="bold"
+                className="pointer-events-none font-sans tracking-tight"
+              >
+                {label}
+              </text>
+
+              {isSelected && !readOnly && (
+                <circle r="4" fill="none" stroke="#22d3ee" strokeWidth="0.3" strokeDasharray="1 0.8" className="animate-pulse" />
+              )}
+            </g>
+          );
+        })}
       </svg>
 
-      <div className="absolute top-2 right-2 flex items-center gap-2 bg-white/80 backdrop-blur-sm rounded-md shadow-sm border border-slate-200 px-2 py-1 text-xs text-slate-700">
-        <button
-          className="px-2 py-1 rounded hover:bg-slate-100"
-          onClick={() => setViewportClamped(prev => ({ ...prev, zoom: Math.min(2.5, prev.zoom * 1.1) }))}
-        >
-          +
-        </button>
-        <button
-          className="px-2 py-1 rounded hover:bg-slate-100"
-          onClick={() => setViewportClamped(prev => ({ ...prev, zoom: Math.max(0.6, prev.zoom / 1.1) }))}
-        >
-          –
-        </button>
-        <button
-          className="px-2 py-1 rounded hover:bg-slate-100"
-          onClick={() => setViewport({ x: 0, y: 0, zoom: 1 })}
-        >
-          Reset View
-        </button>
-      </div>
     </div>
   );
 };
